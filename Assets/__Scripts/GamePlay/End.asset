@@ -13,5 +13,5 @@ MonoBehaviour:
   m_Name: End
   m_EditorClassIdentifier: 
   logo: {fileID: 0}
-  color: {r: 1, g: 0, b: 0.055072784, a: 1}
+  color: {r: 0.7254902, g: 0.68235296, b: 0.8627451, a: 1}
   state: 1

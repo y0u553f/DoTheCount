@@ -15,9 +15,6 @@ public abstract class SquareBaseState
     {
         square.placeHolder.color = state.color;
 
-      
-            
-        Debug.Log("kiki");
     }
 
     public abstract void UpdateState(SquareStateManager square);
