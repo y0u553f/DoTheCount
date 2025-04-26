@@ -1,3 +1,4 @@
+using MobileHapticsProFreeEdition;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -7,45 +8,73 @@ using UnityEngine.UI;
 
 public class BoardManager : MonoBehaviour
 {
-    public SquareStateManager[] squaresArray;
+    [SerializeField]
+    private SquareStateManager[] squaresArray;
+    [SerializeField]
+    private SquareStateObject[] squareStates;
+    [SerializeField]
+    private SquareStateManager[] squaresSolution;
+    [Header("Reset Settings")]
+    [SerializeField, Tooltip("Delay before starting square reset after shake animation")]
+    private float shakeAnimationDelay = 0.1f;
+
+    [SerializeField, Tooltip("Time between individual square resets")]
+    private float squareResetInterval = 0.2f;
+
+    [SerializeField, Tooltip("Time to play color animation of number  fornhints")]
+    private float hintAnimationInterval = 0.8f;
+
+
+
+    [Header("References")]
+    [SerializeField] private Animator anim;
+    [SerializeField] private GraphicRaycaster raycaster;
+    [SerializeField] private EventSystem eventSystem;
+
     private Dictionary<Vector2, SquareStateManager> squares;
-
-    public SquareStateObject[] squareStates;
     public static Dictionary<SquareStateenum, SquareStateObject> states;
-
     private SquareStateManager currentSquare;
+    private Stack<SquareStateManager> usedSquaresStack;
     private int requiredNumber;
     private int currentNumber = 0;
     private bool freezInput = false;
-
-    [SerializeField]
-    private Animator anim;
-    [SerializeField]
-    private GraphicRaycaster raycaster;
-    [SerializeField]
-    private EventSystem eventSystem;
     private PointerEventData pointerEventData;
+
 
     public void Awake()
     {
-        // Initialize dictionaries
+        InitializeDictionaries();
+    }
+
+    private void InitializeDictionaries()
+    {
         squares = new Dictionary<Vector2, SquareStateManager>();
         states = new Dictionary<SquareStateenum, SquareStateObject>();
-
+        usedSquaresStack = new Stack<SquareStateManager>();
 
         try
         {
-            for (int i = 0; i < squaresArray.Length; i++)
-                squares.Add(squaresArray[i].coordinate, squaresArray[i]);
-            for (int i = 0; i < squareStates.Length; i++)
-                states.Add(squareStates[i].state, squareStates[i]);
+            foreach (var square in squaresArray)
+                squares.Add(square.coordinate, square);
+
+            foreach (var state in squareStates)
+                states.Add(state.state, state);
         }
-        catch (Exception e)
+        catch (System.Exception e)
         {
-            Debug.LogError(e);
+            Debug.LogError($"Initialization error: {e.Message}");
         }
     }
 
+
+    public void ShowHint()
+    {
+        foreach (SquareStateManager square in squaresSolution)
+        {
+            square.HighlightSquare(hintAnimationInterval);
+
+        }
+    }
     private void OnEnable()
     {
         SetUpPanel();
@@ -56,6 +85,7 @@ public class BoardManager : MonoBehaviour
     {
         ProcessTouchInput();
     }
+
 
     private void ProcessTouchInput()
     {
@@ -74,7 +104,8 @@ public class BoardManager : MonoBehaviour
                     break;
 
                 case TouchPhase.Ended:
-                    ResetBoard();
+                    if (usedSquaresStack.Count > 0)
+                        StartCoroutine(ResetBoard());
                     break;
             }
         }
@@ -82,77 +113,102 @@ public class BoardManager : MonoBehaviour
 
     private void HandleUITouch(Vector2 touchPosition)
     {
-        // Create a new PointerEventData for the current touch position
         pointerEventData = new PointerEventData(eventSystem)
         {
             position = touchPosition
-         };
+        };
 
-        // Perform a raycast to detect UI elements
         List<RaycastResult> raycastResults = new List<RaycastResult>();
         raycaster.Raycast(pointerEventData, raycastResults);
 
         foreach (RaycastResult result in raycastResults)
         {
-            // Check if the object hit has a SquareStateManager
             SquareStateManager square = result.gameObject.GetComponent<SquareStateManager>();
             if (square != null && square != currentSquare)
             {
                 TryMoveToSquare(square.coordinate, square);
-
                 break;
             }
         }
     }
 
-    private void ResetBoard()
+    private IEnumerator ResetBoard()
     {
-        // Reset the board when the touch ends
+
+        TapticWave.TriggerHaptic(HapticModes.Failure);
+
+        freezInput = true;
         anim.SetTrigger("Shake");
+        yield return ResetUsedSquaresCoroutine();
+
         SetUpPanel();
     }
 
+    private IEnumerator ResetUsedSquaresCoroutine()
+    {
+        freezInput = true;
+        yield return new WaitForSeconds(shakeAnimationDelay);
+
+        while (usedSquaresStack.Count > 0)
+        {
+            SquareStateManager square = usedSquaresStack.Pop();
+            if (square.init != SquareStateenum.endPoint)
+            {
+                print("print state :" + square.currentState.state.state);
+                UpdateCurrentNumber(currentNumber - square.Value);
+            }
+            square.SwitchStates(square.Normal);
+
+            yield return new WaitForSeconds(squareResetInterval);
+            if (usedSquaresStack.Count == 0)
+                yield return new WaitForSeconds(square.currentState.state.transitionDuration);
+
+        }
+
+    }
+
+
     private void TryMoveToSquare(Vector2 targetSquareCoord, SquareStateManager square)
     {
-        // Prevent diagonal moves
-        if (Mathf.Abs(targetSquareCoord.x - currentSquare.coordinate.x) + Mathf.Abs(targetSquareCoord.y - currentSquare.coordinate.y) != 1)
+        if (Mathf.Abs(targetSquareCoord.x - currentSquare.coordinate.x) +
+            Mathf.Abs(targetSquareCoord.y - currentSquare.coordinate.y) != 1)
         {
-            ResetBoard();
+            StartCoroutine(ResetBoard());
             return;
         }
 
-        // Prevent revisiting already active squares
         if (square.currentState == square.Used)
         {
-            ResetBoard();
+            StartCoroutine(ResetBoard());
             return;
         }
 
-
         MoveToSquare(targetSquareCoord);
+        TapticWave.TriggerHaptic(HapticModes.Confirm);
     }
 
     private void MoveToSquare(Vector2 targetSquareCoord)
     {
-        if (targetSquareCoord.x < 0 || targetSquareCoord.x > squaresArray.Length || targetSquareCoord.y < 0 || targetSquareCoord.y > squaresArray.Length)
+        if (targetSquareCoord.x < 0 || targetSquareCoord.x > squaresArray.Length ||
+            targetSquareCoord.y < 0 || targetSquareCoord.y > squaresArray.Length)
             return;
 
-        SquareStateManager square;
-        if (squares.TryGetValue(targetSquareCoord, out square))
+        if (squares.TryGetValue(targetSquareCoord, out SquareStateManager square))
         {
             if (square.currentState.canAccess)
             {
-                square.SwitchStates(square.Used);
-                currentSquare = square;
 
                 if (square.init == SquareStateenum.endPoint)
                 {
                     freezInput = true;
                     CalculateResult();
-                    SetUpPanel();
+                    //SetUpPanel();
                 }
                 else
                 {
+                    square.SwitchStates(square.Used);
+                    currentSquare = square;
+                    usedSquaresStack.Push(square);
                     UpdateCurrentNumber(currentNumber + currentSquare.Value);
                 }
             }
@@ -161,35 +217,28 @@ public class BoardManager : MonoBehaviour
 
     private void SetInitialCurrentSquare()
     {
-        bool entryPointFound = false, endPointFound = false;
-        foreach (KeyValuePair<Vector2, SquareStateManager> square in squares)
+        bool entryFound = false, endFound = false;
+        foreach (var square in squares)
         {
             if (square.Value.init == SquareStateenum.entryPoint)
             {
                 currentSquare = square.Value;
-                entryPointFound = true;
+                entryFound = true;
             }
-            else if ((square.Value.init == SquareStateenum.endPoint))
+            else if (square.Value.init == SquareStateenum.endPoint)
             {
                 requiredNumber = square.Value.Value;
-                endPointFound = true;
+                endFound = true;
             }
 
-            if (endPointFound && entryPointFound)
-                break;
+            if (entryFound && endFound) break;
         }
     }
 
     private void CalculateResult()
     {
-        if (currentNumber == requiredNumber)
-        {
-            Win();
-        }
-        else
-        {
-            Loose();
-        }
+        if (currentNumber == requiredNumber) Win();
+        else Loose();
     }
 
     private void Win()
@@ -200,25 +249,25 @@ public class BoardManager : MonoBehaviour
 
     private void Loose()
     {
-        anim.SetTrigger("Shake");
         AudioManager.instance.PlaySound("wrong");
+        StartCoroutine(ResetBoard());
     }
 
     private void SetUpPanel()
     {
-        foreach (KeyValuePair<Vector2, SquareStateManager> square in squares)
+        foreach (var square in squares)
         {
             square.Value.InitSquare();
         }
         SetInitialCurrentSquare();
         freezInput = false;
         UpdateCurrentNumber(0);
-
+        usedSquaresStack.Clear();
     }
 
     private void UpdateCurrentNumber(int value)
     {
         currentNumber = value;
-        UIManager.instance.UpdateBoardCounter(currentNumber.ToString());
+        UIManager.instance.UpdateBoardCounter(currentNumber);
     }
 }

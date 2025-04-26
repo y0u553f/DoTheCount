@@ -1,29 +1,38 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using DG.Tweening;
 public class SquareStateManager : MonoBehaviour
 {
-    
+    public static event Action OnStarCollected;
+
+    public SquareColorTransition colorTransition;
     public SquareBaseState currentState;
     public SquareEntryPoint EntryPoint { get; private set; }
     public SquareEndPoint EndPoint { get; private set; }
-    public  SquareNormal Normal { get; private set; }
-    public SquareUsed Used {  get; private set; }
+    public SquareNormal Normal { get; private set; }
+    public SquareUsed Used { get; private set; }
+    [SerializeField]
+    private bool isStar;
     public SquareStateenum init;
     //coordinate starts from 1 not 0 , be careful !!
     public Vector2 coordinate;
     public Image placeHolder;
-    
+
     [SerializeField]
     private Text text;
-    [Range (0,20)]
+    [SerializeField]
+    private GameObject star;
+    [Range(0, 20)]
     [SerializeField]
     private int value;
-    public int Value { get => value;  }
-    
 
-  
+    public int Value { get => value; }
+
+
+
 
     public void InitSquare()
     {
@@ -32,19 +41,23 @@ public class SquareStateManager : MonoBehaviour
         SetInitialSquareState();
         currentState.EnterState(this);
         ShowValueOnText();
+        ShowStar(isStar);
     }
     private void SetInitialSquareState()
     {
         switch (init)
         {
-            case SquareStateenum.entryPoint:currentState = EntryPoint;
+            case SquareStateenum.entryPoint:
+                currentState = EntryPoint;
                 break;
-            case SquareStateenum.normal:currentState = Normal;
+            case SquareStateenum.normal:
+                currentState = Normal;
                 break;
-            case SquareStateenum.endPoint:  currentState = EndPoint;
-            
+            case SquareStateenum.endPoint:
+                currentState = EndPoint;
+
                 break;
-            default:break;
+            default: break;
         }
     }
 
@@ -56,7 +69,7 @@ public class SquareStateManager : MonoBehaviour
         Used = new SquareUsed(GetStateObject(SquareStateenum.used), false);
     }
 
-    private SquareStateObject GetStateObject(SquareStateenum stateenum )
+    private SquareStateObject GetStateObject(SquareStateenum stateenum)
     {
         SquareStateObject stateobject;
         if (BoardManager.states.TryGetValue(stateenum, out stateobject))
@@ -69,9 +82,14 @@ public class SquareStateManager : MonoBehaviour
     {
         currentState = newState;
         currentState.EnterState(this);
+
+        if (newState is SquareUsed && isStar)
+        {
+            OnStarCollected?.Invoke();
+        }
     }
 
-    public void ShowValueOnText()
+    private void ShowValueOnText()
     {
         if (value == 0)
         {
@@ -81,4 +99,17 @@ public class SquareStateManager : MonoBehaviour
 
         text.text = value.ToString();
     }
+
+    private void ShowStar(bool value)
+    {
+        star.SetActive(value);
+    }
+
+
+    public void HighlightSquare(float animationDuration)
+    {
+        text.DOColor(Color.yellow, animationDuration);
+
+    }
+
 }
